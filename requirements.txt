@@ -1,0 +1,4 @@
+kdbxtool
+rich
+pyperclip
+python-dotenv
