@@ -10,7 +10,7 @@ import getpass
 
 load_dotenv()
 
-DB_PATH = r"C:\Users\Yogi.RahmanAlif\Documents\yogs_smoe.kdbx"
+DB_PATH = os.getenv("DB", r"file.kdbx")
 
 c = Console()
 
@@ -75,249 +75,255 @@ def build_tree(group, node):
     for e in group.entries:
         node.add(f"[green]🔑 {e.title}")
 
-with Database.open(
-    DB_PATH,
-    password=os.getenv("PASS")
-) as db:
+try:
+    with Database.open(
+        DB_PATH,
+        password=os.getenv("PASS")
+    ) as db:
 
-    current = db.root_group
+        current = db.root_group
 
-    c.print("[green]KeePass Shell[/]")
-    c.print("type 'help'")
+        c.print("[green]KeePass Shell[/]")
+        c.print("type 'help'")
 
-    while True:
-        try:
-            cmd = input(f"{path(current)}> ").strip()
+        while True:
+            try:
+                cmd = input(f"{path(current)}> ").strip()
 
-            if not cmd:
-                continue
-
-            parts = cmd.split()
-            action = parts[0]
-
-            # ---------- HELP ----------
-
-            if action == "help":
-                c.print("""
-ls                list current group
-cd N              enter subgroup
-cd ..             go back
-pwd               show path
-view N            show credential
-cat N             alias of view
-cp N              copy password
-new               create credential
-mkdir             create subgroup
-rm N              delete item
-search TEXT       search entire db
-tree              show tree
-quit              exit
-""")
-
-            # ---------- QUIT ----------
-
-            elif action in ("quit", "exit", "q"):
-                break
-
-            # ---------- PWD ----------
-
-            elif action == "pwd":
-                c.print(path(current))
-
-            # ---------- LS ----------
-
-            elif action == "ls":
-                ls(current)
-
-            # ---------- CD ----------
-
-            elif action == "cd":
-
-                if len(parts) < 2:
+                if not cmd:
                     continue
 
-                target = " ".join(parts[1:])
+                parts = cmd.split()
+                action = parts[0]
 
-                # cd ..
-                if target == "..":
-                    if current.parent:
-                        current = current.parent
-                    continue
+                # ---------- HELP ----------
 
-                # cd by number
-                if target.isdigit():
+                if action == "help":
+                    c.print("""
+    ls                list current group
+    cd N              enter subgroup
+    cd ..             go back
+    pwd               show path
+    view N            show credential
+    cat N             alias of view
+    cp N              copy password
+    new               create credential
+    mkdir             create subgroup
+    rm N              delete item
+    search TEXT       search entire db
+    tree              show tree
+    quit              exit
+    """)
 
-                    idx = int(target)
+                # ---------- QUIT ----------
 
-                    mapping = ls(current)
+                elif action in ("quit", "exit", "q"):
+                    break
 
-                    if idx not in mapping:
-                        c.print("[red]invalid index[/]")
+                # ---------- PWD ----------
+
+                elif action == "pwd":
+                    c.print(path(current))
+
+                # ---------- LS ----------
+
+                elif action == "ls":
+                    ls(current)
+
+                # ---------- CD ----------
+
+                elif action == "cd":
+
+                    if len(parts) < 2:
                         continue
+
+                    target = " ".join(parts[1:])
+
+                    # cd ..
+                    if target == "..":
+                        if current.parent:
+                            current = current.parent
+                        continue
+
+                    # cd by number
+                    if target.isdigit():
+
+                        idx = int(target)
+
+                        mapping = ls(current)
+
+                        if idx not in mapping:
+                            c.print("[red]invalid index[/]")
+                            continue
+
+                        typ, obj = mapping[idx]
+
+                        if typ != "group":
+                            c.print("[red]not a group[/]")
+                            continue
+
+                        current = obj
+
+                    # cd by group name
+                    else:
+
+                        found = next(
+                            (
+                                g
+                                for g in current.subgroups
+                                if g.name.lower() == target.lower()
+                            ),
+                            None,
+                        )
+
+                        if found:
+                            current = found
+                        else:
+                            c.print("[red]group not found[/]")
+
+
+                # ---------- VIEW ----------
+
+                elif action in ("view", "cat"):
+
+                    idx = int(parts[1])
+                    mapping = ls(current)
 
                     typ, obj = mapping[idx]
 
-                    if typ != "group":
-                        c.print("[red]not a group[/]")
+                    if typ != "cred":
+                        c.print("[red]not a credential[/]")
                         continue
 
-                    current = obj
+                    show_entry(obj)
 
-                # cd by group name
-                else:
+                # ---------- COPY PASS ----------
 
-                    found = next(
-                        (
-                            g
-                            for g in current.subgroups
-                            if g.name.lower() == target.lower()
-                        ),
-                        None,
+                elif action == "cp":
+
+                    idx = int(parts[1])
+                    mapping = ls(current)
+
+                    typ, obj = mapping[idx]
+
+                    if typ == "cred":
+                        pyperclip.copy(obj.password)
+                        c.print("[green]password copied[/]")
+
+                # ---------- NEW ENTRY ----------
+
+                elif action == "new":
+
+                    title = input("Title: ")
+                    user = input("Username: ")
+                    pwd = getpass.getpass("Password: ")
+                    url = input("URL: ")
+
+                    current.add_entry(
+                        title=title,
+                        username=user,
+                        password=pwd,
+                        url=url,
                     )
 
-                    if found:
-                        current = found
-                    else:
-                        c.print("[red]group not found[/]")
-
-
-            # ---------- VIEW ----------
-
-            elif action in ("view", "cat"):
-
-                idx = int(parts[1])
-                mapping = ls(current)
-
-                typ, obj = mapping[idx]
-
-                if typ != "cred":
-                    c.print("[red]not a credential[/]")
-                    continue
-
-                show_entry(obj)
-
-            # ---------- COPY PASS ----------
-
-            elif action == "cp":
-
-                idx = int(parts[1])
-                mapping = ls(current)
-
-                typ, obj = mapping[idx]
-
-                if typ == "cred":
-                    pyperclip.copy(obj.password)
-                    c.print("[green]password copied[/]")
-
-            # ---------- NEW ENTRY ----------
-
-            elif action == "new":
-
-                title = input("Title: ")
-                user = input("Username: ")
-                pwd = getpass.getpass("Password: ")
-                url = input("URL: ")
-
-                current.add_entry(
-                    title=title,
-                    username=user,
-                    password=pwd,
-                    url=url,
-                )
-
-                db.save()
-                c.print("[green]saved[/]")
-
-            # ---------- NEW GROUP ----------
-
-            elif action == "mkdir":
-
-                name = input("Group name: ")
-
-                if hasattr(current, "add_group"):
-                    current.add_group(name)
                     db.save()
-                    c.print("[green]group created[/]")
-                else:
-                    c.print(
-                        "[yellow]add_group() not available in your kdbxtool version[/]"
+                    c.print("[green]saved[/]")
+
+                # ---------- NEW GROUP ----------
+
+                elif action == "mkdir":
+
+                    name = input("Group name: ")
+
+                    if hasattr(current, "add_group"):
+                        current.add_group(name)
+                        db.save()
+                        c.print("[green]group created[/]")
+                    else:
+                        c.print(
+                            "[yellow]add_group() not available in your kdbxtool version[/]"
+                        )
+
+                # ---------- DELETE ----------
+
+                elif action == "rm":
+
+                    idx = int(parts[1])
+                    mapping = ls(current)
+
+                    typ, obj = mapping[idx]
+
+                    confirm = input(
+                        f"delete {getattr(obj,'name',getattr(obj,'title','item'))}? [y/N] "
                     )
 
-            # ---------- DELETE ----------
+                    if confirm.lower() != "y":
+                        continue
 
-            elif action == "rm":
+                    obj.delete()
+                    db.save()
 
-                idx = int(parts[1])
-                mapping = ls(current)
+                    c.print("[green]deleted[/]")
 
-                typ, obj = mapping[idx]
+                # ---------- SEARCH ----------
 
-                confirm = input(
-                    f"delete {getattr(obj,'name',getattr(obj,'title','item'))}? [y/N] "
-                )
+                elif action == "search":
 
-                if confirm.lower() != "y":
-                    continue
+                    if len(parts) < 2:
+                        continue
 
-                obj.delete()
-                db.save()
+                    query = " ".join(parts[1:]).lower()
 
-                c.print("[green]deleted[/]")
+                    tbl = Table(title=f"Search: {query}")
+                    tbl.add_column("Title")
+                    tbl.add_column("User")
+                    tbl.add_column("URL")
 
-            # ---------- SEARCH ----------
+                    count = 0
 
-            elif action == "search":
+                    for e in db.iter_entries():
 
-                if len(parts) < 2:
-                    continue
+                        text = " ".join(
+                            [
+                                str(e.title or ""),
+                                str(e.username or ""),
+                                str(e.url or ""),
+                            ]
+                        ).lower()
 
-                query = " ".join(parts[1:]).lower()
+                        if query in text:
+                            tbl.add_row(
+                                e.title or "",
+                                e.username or "",
+                                e.url or "",
+                            )
+                            count += 1
 
-                tbl = Table(title=f"Search: {query}")
-                tbl.add_column("Title")
-                tbl.add_column("User")
-                tbl.add_column("URL")
+                    c.print(tbl)
+                    c.print(f"[green]{count} result(s)[/]")
 
-                count = 0
+                # ---------- TREE ----------
 
-                for e in db.iter_entries():
+                elif action == "tree":
 
-                    text = " ".join(
-                        [
-                            str(e.title or ""),
-                            str(e.username or ""),
-                            str(e.url or ""),
-                        ]
-                    ).lower()
+                    root = Tree(
+                        f"[bold yellow]{db.root_group.name}"
+                    )
 
-                    if query in text:
-                        tbl.add_row(
-                            e.title or "",
-                            e.username or "",
-                            e.url or "",
-                        )
-                        count += 1
+                    build_tree(
+                        db.root_group,
+                        root
+                    )
 
-                c.print(tbl)
-                c.print(f"[green]{count} result(s)[/]")
+                    c.print(root)
 
-            # ---------- TREE ----------
+                else:
+                    c.print("[red]unknown command[/]")
 
-            elif action == "tree":
+            except Exception as e:
+                c.print(f"[red]{e}[/]")
 
-                root = Tree(
-                    f"[bold yellow]{db.root_group.name}"
-                )
-
-                build_tree(
-                    db.root_group,
-                    root
-                )
-
-                c.print(root)
-
-            else:
-                c.print("[red]unknown command[/]")
-
-        except Exception as e:
-            c.print(f"[red]{e}[/]")
+except FileNotFoundError:
+    c.print(f"[red]Database not found:[/] {DB_PATH}")
+except Exception as e:
+    c.print(f"[red]Failed to open database:[/] {e}")
