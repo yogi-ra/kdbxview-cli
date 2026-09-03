@@ -18,8 +18,8 @@ def resolve_path(start, target):
     Examples:
         2
         2/3
-        cakrawala
-        cakrawala/local
+        group
+        grub/subgroup
     """
 
     current = start
@@ -315,7 +315,7 @@ quit                    exit
                     password = getpass.getpass("Password: ")
                     url = input("URL: ")
 
-                    current.add_entry(
+                    current.create_entry(
                         title=title,
                         username=username,
                         password=password,
@@ -332,7 +332,7 @@ quit                    exit
 
                     name = input("Group name: ").strip()
 
-                    current.add_subgroup(name)
+                    current.create_subgroup(name)
 
                     db.save()
 
@@ -441,6 +441,15 @@ quit                    exit
 
                     c.print("[green]KeePass Shell[/]")
                     c.print("type 'help'")
+
+                elif action == "debug":
+
+                    import inspect
+
+                    print("add_entry      :", inspect.signature(current.add_entry))
+                    print("create_entry   :", inspect.signature(current.create_entry))
+                    print("add_subgroup   :", inspect.signature(current.add_subgroup))
+                    print("create_subgroup:", inspect.signature(current.create_subgroup))
 
                 else:
                     c.print("[red]unknown command[/]")
