@@ -1,17 +1,42 @@
 from kdbxtool import Database
-from dotenv import load_dotenv
+from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
+import argparse
 import pyperclip
 import os
 import getpass
 
-load_dotenv()
-
-DB_PATH = os.getenv("DB", r"file.kdbx")
-
 c = Console()
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Interactive KeePass (.kdbx) shell")
+    parser.add_argument(
+        "db",
+        nargs="?",
+        default=None,
+        help="Path to the .kdbx database file",
+    )
+    parser.add_argument(
+        "-p",
+        "--password",
+        default=None,
+        help="Database password (prompts securely if not provided)",
+    )
+    parser.add_argument(
+        "-c",
+        "--create",
+        action="store_true",
+        help="Create a new database",
+    )
+    args = parser.parse_args()
+
+    if not args.db and not args.create:
+        parser.print_help()
+        parser.exit()
+
+    return args
 
 def resolve_path(start, target):
     """
@@ -65,6 +90,7 @@ def resolve_path(start, target):
                 return None
 
     return current
+
 
 def path(grp):
     parts = []
@@ -146,14 +172,62 @@ def build_tree(group, node):
         node.add(f"[green]🔑 {e.title}")
 
 
-try:
+def create_db(filepath: str | Path, password: str) -> str:
+    filepath = Path(filepath).expanduser()
 
-    if not os.path.exists(DB_PATH):
-        raise FileNotFoundError(DB_PATH)
+    if filepath.suffix.lower() != ".kdbx":
+        filepath = filepath.with_suffix(".kdbx")
+
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    if filepath.exists():
+        raise FileExistsError(f"Database already exists: {filepath}")
+
+    db = Database.create(
+        password=password,
+        database_name=filepath.stem,
+    )
+
+    db.save(str(filepath))
+
+    c.print(f"[green]Database created:[/] {filepath}")
+
+    return str(filepath)
+
+
+args = parse_args()
+db_path = args.db
+db_password = args.password
+
+try:
+    if args.create:
+        if not db_path:
+            c.print("[green]Enter file path \\[./kdbxview-db.kdbx]:[/] ", end="")
+            db_path = input().strip() or "./kdbxview-db.kdbx"
+        if db_password is None:
+            db_password = getpass.getpass("Database password: ")
+        db_path = create_db(db_path, db_password)
+
+    elif not os.path.exists(db_path):
+        c.print(f"[yellow]Database not found:[/] {db_path}")
+        c.print("Would you like to create new db? \\[Y/n]: ", end="")
+        c_chall = input().strip() or "Y"
+
+        if c_chall.lower().startswith("y"):
+            c.print(f"[green]Enter file path \\[{db_path}]:[/] ", end="")
+            c_dpath = input().strip() or db_path
+            if db_password is None:
+                db_password = getpass.getpass("Database password: ")
+            db_path = create_db(c_dpath, db_password)
+        else:
+            raise FileNotFoundError(db_path)
+
+    if db_password is None:
+        db_password = getpass.getpass("Database password: ")
 
     with Database.open(
-        DB_PATH,
-        password=os.getenv("PASS")
+        db_path,
+        password=db_password,
     ) as db:
 
         current = db.root_group
@@ -357,7 +431,7 @@ quit                    exit
                     typ, obj = mapping[idx]
 
                     confirm = input(
-                        f"delete {getattr(obj,'name',getattr(obj,'title','item'))}? [y/N] "
+                        f"delete {getattr(obj,'name',getattr(obj,'title','item'))}? [y/N]: "
                     )
 
                     if confirm.lower() != "y":
@@ -457,10 +531,14 @@ quit                    exit
             except Exception as e:
                 c.print(f"[red]{e}[/]")
 
-except FileNotFoundError:
-    c.print(f"[red]Database not found:[/] {DB_PATH}")
+except FileExistsError as e:
+    c.print(f"[red]{e}[/]")
 
-except Exception:
+except FileNotFoundError as e:
+    c.print(f"[red]Database not found:[/] {e}")
+
+except Exception as e:
     c.print(
-        "[red]Failed to open database. Wrong password or invalid KDBX file.[/]"
+        "[red]Failed to open database. "
+        f"Wrong password or invalid KDBX file.[/] {e}"
     )
